@@ -6,14 +6,14 @@
 // Change the part in brackets to your Duino-Coin username
 extern char *DUCO_USER = "ARaW32";
 // Change the part in brackets to your mining key (if you have set it in the wallet)
-extern char *MINER_KEY = "arawganteng";
+extern char *MINER_KEY = "DONT FORGET FILL HERE";
 // Change the part in brackets if you want to set a custom miner name
 // Use Auto to autogenerate, None for no custom identifier
-extern char *RIG_IDENTIFIER = "ESP32S";
+extern char *RIG_IDENTIFIER = "None";
 // Change the part in brackets to your WiFi name
-extern const char SSID[] = "ESPs";
+extern const char SSID[] = "SSID";
 // Change the part in brackets to your WiFi password
-extern const char PASSWORD[] = "m4m4p4p4";
+extern const char PASSWORD[] = "PASS";
 // -------------------------------------------------------------- //
 
 // -------------------- Advanced options ------------------------ //
