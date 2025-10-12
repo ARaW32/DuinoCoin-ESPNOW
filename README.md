@@ -1,104 +1,122 @@
-<h1>Duino-Coin ESP-NOW Gateway & Worker (ESP32 + ESP-01)</h1>
+<h1 align="center">⚙️ Duino-Coin ESP-NOW Gateway & Worker (ESP32 + ESP-01)</h1>
 
-> Status: fresh project — works end-to-end in testing, but hasn’t been tried with a large number of devices yet. 
-> Expect some rough edges and please report issues 🙏
+<p align="center">
+  <b>ESP-NOW powered distributed Duino-Coin miner</b><br>
+  <i>Mine with many ESP-01s — while your router only sees one device!</i>
+</p>
 
-<h3>What this is</h3>
-A master–slave (gateway–worker) setup for Duino-Coin mining on ESP devices:
-<ul>
-  <li>ESP32 = Gateway <br>
-      Connects to Wi-Fi + Duino pool, requests jobs, bridges data to workers via ESP-NOW, submits results back to the pool.
-  </li>
-  <li>ESP-01 / ESP8266 = Worker <br>
-      Receives jobs via ESP-NOW, performs DSHA1 mining locally, sends results back via ESP-NOW.    
-  </li>
-</ul>  
-Why? To mine with many ESP-01 while your router only counts one Wi-Fi client (the ESP32), because workers don’t join Wi-Fi — they talk to the gateway over ESP-NOW.
-<hr>
-<h3>Features</h3>
-<ul>
-  <li>ESP-NOW bridge: Worker ←→ Gateway (no AP join for workers).</li>
-  <li>Auto pairing (no MAC lists): Broadcast handshake; workers learn the gateway’s actual STA MAC automatically.</li>
-  <li>Uplink broadcast, downlink unicast: Robust against ACK quirks on ESP8266 → ESP32.</li>
-  <li>Difficulty target: Gateway requests jobs with ESP8266 tag (typical diff ≈ 4000).</li>
-  <li>Per-worker identifier: Each worker auto-names its rig: ESP01S-<NODE_ID> (e.g. ESP01S-D4F8A9).</li>
-  <li>LED on worker: blink 2× on GOOD, 1× on BAD.</li>
-  <li>DNS-patched pool connect: Discover /getPool via HTTP → connect by IP, not hostname (more resilient).</li>
-</ul>
-<hr>
-<h3>How it works (in baby steps)</h3>
-<ol>
-  <li>
-    <b>Gateway connects to your Wi-Fi and calls /getPool (HTTP).</b><br>
-    It parses ip + port, then opens a TCP connection by IP.
-  </li>
-  <li>ESP-NOW handshake:<br>
-    <ul>
-      <li>Gateway broadcasts HELLO_GW.</li>
-      <li>Workers broadcast HELLO_NODE,<NODE_ID> and unicast HELLO_ACK back after learning gateway’s STA MAC.</li>
-    </ul>
-  </li>
-  <li>Worker asks for job:<br>
-      REQJOB,<NODE_ID> (broadcast uplink).</li>
-  <li>Gateway → Pool → Worker:<br>
-  Gateway sends JOB,<user>,ESP8266,<key> → gets one job → sends to worker as
-JOB,<lastHash>,<expectedHex>,<diff> (unicast).</li>
-  <li>Worker mines (local DSHA1):<br>
-      Tries nonces up to diff*100+1. Computes hash; if equals expected → found.</li>
-  <li>Worker submits (uplink broadcast):<br>
-  SUBMIT,<nonce>,<khps>,<rig>,<chip>,<user>,<node_id>
-  </li>
-  <li>Gateway → Pool:<br>
-  Forwards submit in Duino’s canonical format; pool returns GOOD/BAD/....
-Gateway replies to worker: ACK,<resp>,<ping_ms> (unicast).
-Worker LED blinks: 2× for GOOD, 1× for BAD. Then repeats from step 3.</li>
-</ol>
-<hr>
-Multi-ESP notes
+<p align="center">
+  <img src="https://img.shields.io/badge/status-fresh--project-blue?style=flat-square">
+  <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square">
+  <img src="https://img.shields.io/badge/platform-ESP32%20%2B%20ESP8266-orange?style=flat-square">
+</p>
 
-Workers use random jitter on REQJOB to reduce collisions.
+---
 
-Gateway maintains a small registry {MAC, NODE_ID} discovered via handshake.
+> 🧪 **Status:** Fresh project — works end-to-end in testing, but not yet stress-tested with large device counts.  
+> ⚠️ **Known issue:** `BAD Submit`, `Modified Hash` — being investigated.  
+> 🧰 Expect rough edges — PRs & bug reports are *very welcome!*
 
-Uplink (worker→gateway) uses broadcast for reliability; downlink is unicast.
+---
 
-For 10–20 workers, this method is practical. For larger fleets, see Roadmap.
+## 💡 What This Is
 
-<hr>
+A **master–worker** (gateway–worker) setup for [Duino-Coin](https://github.com/revoxhere/duino-coin) mining using ESP devices.
 
-<h3>Expected serial logs (happy path)</h3>
+| Role | Device | Description |
+|------|---------|-------------|
+| 🖧 **Gateway** | ESP32 | Connects to Wi-Fi and Duino pool, fetches jobs, bridges them to workers via ESP-NOW, and submits results back. |
+| ⚙️ **Worker** | ESP-01 / ESP8266 | Receives mining jobs over ESP-NOW, computes DSHA1 locally, and sends results back to the gateway. |
 
-Gateway (ESP32):
+**Why this project?**  
+Because you can mine with *many* ESP-01s while only **one** device connects to your router.  
+The workers never join Wi-Fi — they use ESP-NOW for lightweight, low-power communication.
 
-[GW] boot
-[GW] WiFi... OK IP=192.168.x.y ch=1 STA=44:1D:...
-[PEER D4F8A9] HELLO_NODE
-[JOB D4F8A9] <lastHash,expected,diff>
-[SUBMIT D4F8A9] GOOD (154ms)
+---
 
-Worker (ESP-01):
+## ✨ Features
 
-[WKR] boot
-[WKR D4F8A9] HELLO_NODE
-[WKR D4F8A9] REQJOB
-[WKR D4F8A9] JOB diff=4000
-[WKR D4F8A9] SUBMIT nonce=... kh/s=...
-[WKR D4F8A9] ACK GOOD
+- 🔁 **ESP-NOW bridge:** Worker ↔ Gateway (no Wi-Fi join needed for workers).  
+- 🧭 **Auto pairing:** Broadcast handshake — no manual MAC setup.  
+- 📡 **Smart communication:** Uplink = broadcast, Downlink = unicast (solves ACK quirks).  
+- 🎯 **Adaptive difficulty:** Requests jobs tagged as `ESP8266` (≈ diff 4000).  
+- 🆔 **Auto rig naming:** `ESP01S-<NODE_ID>` (e.g. `ESP01S-D4F8A9`).  
+- 💡 **Status LED:** Blink `2× GOOD`, `1× BAD`.  
+- 🌐 **DNS-patched pool connect:** Resolves `/getPool` via HTTP → connects by IP (faster, more resilient).
 
-<hr>
+---
 
-Contributing
+## 🧩 How It Works — Step by Step
 
-PRs welcome!
-Please include logs for both gateway & worker when reporting bugs (first 20–30 lines that show the issue).
+1. **Gateway boot-up**
+   - Connects to Wi-Fi and calls `/getPool` (HTTP).  
+   - Parses IP + port, then opens TCP connection.
 
-<hr>
+2. **ESP-NOW Handshake**
+   - Gateway broadcasts `HELLO_GW`.  
+   - Worker broadcasts `HELLO_NODE,<NODE_ID>` and unicasts `HELLO_ACK` after learning gateway’s STA MAC.
 
-License
-MIT (proposed). If you need a different license, open an issue.
+3. **Worker requests job**
+   - Sends `REQJOB,<NODE_ID>` (broadcast).
 
-<hr>
+4. **Gateway → Pool → Worker**
+   - Gateway requests one job (`JOB,<user>,ESP8266,<key>`) from pool.  
+   - Sends to worker: `JOB,<lastHash>,<expectedHex>,<diff>` (unicast).
 
-<h3>Disclamer</h3>
-This is a new project. It has not been tested at mass scale. Use at your own risk; keep an eye on device temps and power rails. If something feels flaky, file an issue and we’ll fix it. Happy hacking! 💡🔧
+5. **Worker mines locally**
+   - Performs DSHA1 up to `diff*100+1` nonces.  
+   - Compares hash with expected.
 
+6. **Worker submits result**
+   - Broadcasts: `SUBMIT,<nonce>,<khps>,<rig>,<chip>,<user>,<node_id>`
+
+7. **Gateway → Pool → Worker**
+   - Forwards submit in canonical format.  
+   - Pool replies `GOOD` / `BAD` / etc.  
+   - Gateway responds: `ACK,<resp>,<ping_ms>` (unicast).  
+   - Worker LED blinks accordingly, then loops back to step 3.
+
+---
+
+## 🧠 Notes for Multi-ESP Setups
+
+- Workers add **random jitter** on `REQJOB` to prevent broadcast collisions.  
+- Gateway maintains a small registry `{MAC, NODE_ID}` for active workers.  
+- Uplink uses **broadcast** for reliability; downlink uses **unicast** for precision.  
+- Works best for **10–20 workers**. Beyond that, see roadmap for scaling ideas.
+
+---
+
+## 🤝 Contributing
+
+Pull requests welcome!  
+If you encounter a bug, please include:
+- Logs from both **gateway & worker**
+- First **20–30 lines** showing the handshake and job flow
+
+---
+
+## ⚖️ License
+
+MIT (proposed).  
+Need a different license? → Open an issue.
+
+---
+
+## ⚠️ Disclaimer
+
+This is a **new project** — not tested at large scale.  
+Use at your own risk.  
+Keep an eye on:
+- 🔥 Device temperatures  
+- ⚡ Power rail stability  
+
+If something seems flaky, file an issue — we’ll fix it.  
+Happy hacking! 💡🔧
+
+---
+
+<p align="center">
+  <i>“One gateway to rule them all — and in the LAN bind them.”</i><br>
+  <b>— Duino-NOW Project</b>
+</p>
