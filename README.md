@@ -54,6 +54,51 @@ Gateway replies to worker: ACK,<resp>,<ping_ms> (unicast).
 Worker LED blinks: 2× for GOOD, 1× for BAD. Then repeats from step 3.</li>
 </ol>
 <hr>
+Multi-ESP notes
+
+Workers use random jitter on REQJOB to reduce collisions.
+
+Gateway maintains a small registry {MAC, NODE_ID} discovered via handshake.
+
+Uplink (worker→gateway) uses broadcast for reliability; downlink is unicast.
+
+For 10–20 workers, this method is practical. For larger fleets, see Roadmap.
+
+<hr>
+
+<h3>Expected serial logs (happy path)</h3>
+
+Gateway (ESP32):
+
+[GW] boot
+[GW] WiFi... OK IP=192.168.x.y ch=1 STA=44:1D:...
+[PEER D4F8A9] HELLO_NODE
+[JOB D4F8A9] <lastHash,expected,diff>
+[SUBMIT D4F8A9] GOOD (154ms)
+
+Worker (ESP-01):
+
+[WKR] boot
+[WKR D4F8A9] HELLO_NODE
+[WKR D4F8A9] REQJOB
+[WKR D4F8A9] JOB diff=4000
+[WKR D4F8A9] SUBMIT nonce=... kh/s=...
+[WKR D4F8A9] ACK GOOD
+
+<hr>
+
+Contributing
+
+PRs welcome!
+Please include logs for both gateway & worker when reporting bugs (first 20–30 lines that show the issue).
+
+<hr>
+
+License
+MIT (proposed). If you need a different license, open an issue.
+
+<hr>
+
 <h3>Disclamer</h3>
 This is a new project. It has not been tested at mass scale. Use at your own risk; keep an eye on device temps and power rails. If something feels flaky, file an issue and we’ll fix it. Happy hacking! 💡🔧
 
