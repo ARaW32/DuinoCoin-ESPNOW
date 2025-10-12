@@ -14,7 +14,7 @@
 // ===== USER CONFIG =====
 static const uint8_t WIFI_CHANNEL = 1;      // samakan dgn channel AP/gateway
 // (opsional) hint MAC gateway; worker tetap pakai MAC sumber HELLO_GW
-uint8_t GATEWAY_MAC_HINT[6] = { 0x44,0x1D,0x64,0xBD,0x94,0x08 };
+uint8_t GATEWAY_MAC_HINT[6] = { 0xXX,0xXX,0xXX,0xXX,0xXX,0xXX };
 // uplink mode: broadcast-only untuk stabil (hindari onSent FAIL unicast)
 #define USE_UNICAST_UPLINK 0
 
