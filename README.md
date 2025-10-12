@@ -38,34 +38,22 @@ Why? To mine with many ESP-01 while your router only counts one Wi-Fi client (th
       <li>Workers broadcast HELLO_NODE,<NODE_ID> and unicast HELLO_ACK back after learning gateway’s STA MAC.</li>
     </ul>
   </li>
-  <li></li>
-  <li></li>
-  <li></li>
-  <li></li>
-  <li></li>
-</ol>
-
-
-
-
-
-
-
-
-Worker asks for job:
-REQJOB,<NODE_ID> (broadcast uplink).
-
-Gateway → Pool → Worker:
-Gateway sends JOB,<user>,ESP8266,<key> → gets one job → sends to worker as
-JOB,<lastHash>,<expectedHex>,<diff> (unicast).
-
-Worker mines (local DSHA1):
-Tries nonces up to diff*100+1. Computes hash; if equals expected → found.
-
-Worker submits (uplink broadcast):
-SUBMIT,<nonce>,<khps>,<rig>,<chip>,<user>,<node_id>
-
-Gateway → Pool:
-Forwards submit in Duino’s canonical format; pool returns GOOD/BAD/....
+  <li>Worker asks for job:<br>
+      REQJOB,<NODE_ID> (broadcast uplink).</li>
+  <li>Gateway → Pool → Worker:<br>
+  Gateway sends JOB,<user>,ESP8266,<key> → gets one job → sends to worker as
+JOB,<lastHash>,<expectedHex>,<diff> (unicast).</li>
+  <li>Worker mines (local DSHA1):<br>
+      Tries nonces up to diff*100+1. Computes hash; if equals expected → found.</li>
+  <li>Worker submits (uplink broadcast):<br>
+  SUBMIT,<nonce>,<khps>,<rig>,<chip>,<user>,<node_id>
+  </li>
+  <li>Gateway → Pool:<br>
+  Forwards submit in Duino’s canonical format; pool returns GOOD/BAD/....
 Gateway replies to worker: ACK,<resp>,<ping_ms> (unicast).
-Worker LED blinks: 2× for GOOD, 1× for BAD. Then repeats from step 3.
+Worker LED blinks: 2× for GOOD, 1× for BAD. Then repeats from step 3.</li>
+</ol>
+<hr>
+<h3>Disclamer</h3>
+This is a new project. It has not been tested at mass scale. Use at your own risk; keep an eye on device temps and power rails. If something feels flaky, file an issue and we’ll fix it. Happy hacking! 💡🔧
+
