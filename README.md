@@ -110,13 +110,5 @@ Use at your own risk.
 Keep an eye on:
 - 🔥 Device temperatures  
 - ⚡ Power rail stability  
-
-If something seems flaky, file an issue — we’ll fix it.  
-Happy hacking! 💡🔧
-
----
-
-<p align="center">
-  <i>“One gateway to rule them all — and in the LAN bind them.”</i><br>
-  <b>— Duino-NOW Project</b>
-</p>
+ 
+Happy mining! 💡🔧
