@@ -32,7 +32,12 @@ Why? To mine with many ESP-01 while your router only counts one Wi-Fi client (th
     <b>Gateway connects to your Wi-Fi and calls /getPool (HTTP).</b><br>
     It parses ip + port, then opens a TCP connection by IP.
   </li>
-  <li></li>
+  <li>ESP-NOW handshake:<br>
+    <ul>
+      <li>Gateway broadcasts HELLO_GW.</li>
+      <li>Workers broadcast HELLO_NODE,<NODE_ID> and unicast HELLO_ACK back after learning gateway’s STA MAC.</li>
+    </ul>
+  </li>
   <li></li>
   <li></li>
   <li></li>
@@ -42,11 +47,10 @@ Why? To mine with many ESP-01 while your router only counts one Wi-Fi client (th
 
 
 
-ESP-NOW handshake:
 
-Gateway broadcasts HELLO_GW.
 
-Workers broadcast HELLO_NODE,<NODE_ID> and unicast HELLO_ACK back after learning gateway’s STA MAC.
+
+
 
 Worker asks for job:
 REQJOB,<NODE_ID> (broadcast uplink).
