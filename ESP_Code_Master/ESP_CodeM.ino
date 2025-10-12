@@ -9,12 +9,12 @@
 #include <esp_now.h>
 #include "Settings.h"  // DUCO_USER, MINER_KEY, RIG_IDENTIFIER (boleh dipakai)
 
-#define WIFI_SSID_VALUE "ESPs"
-#define WIFI_PASS_VALUE "m4m4p4p4"
+#define WIFI_SSID_VALUE "SSID"
+#define WIFI_PASS_VALUE "PASS"
 
 static const uint8_t BCAST_MAC[6] = { 255, 255, 255, 255, 255, 255 };
 static const char* START_DIFF_TAG = "ESP8266";  // starting diff ≈ 4000
-static const char* MINER_BANNER = "Official ESP8266 Miner";
+static const char* MINER_BANNER = "Official ESP8266 Miner"; // its actually unofficial but duino coin wallet will make it as single ESP01
 static const char* MINER_VER = "4.3";
 
 static const uint32_t JOB_TIMEOUT_MS = 20000;
