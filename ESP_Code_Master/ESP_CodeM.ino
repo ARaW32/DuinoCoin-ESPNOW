@@ -9,16 +9,21 @@
 #include <esp_now.h>
 #include "Settings.h"  // DUCO_USER, MINER_KEY, RIG_IDENTIFIER (boleh dipakai)
 
-#define WIFI_SSID_VALUE "SSID"
-#define WIFI_PASS_VALUE "PASS"
+#define WIFI_SSID_VALUE "ESPs"
+#define WIFI_PASS_VALUE "m4m4p4p4"
 
 static const uint8_t BCAST_MAC[6] = { 255, 255, 255, 255, 255, 255 };
 static const char* START_DIFF_TAG = "ESP8266";  // starting diff ≈ 4000
-static const char* MINER_BANNER = "Official ESP8266 Miner"; // its actually unofficial but duino coin wallet will make it as single ESP01
+static const char* MINER_BANNER = "Official ESP8266 Miner";
 static const char* MINER_VER = "4.3";
 
 static const uint32_t JOB_TIMEOUT_MS = 20000;
 static const uint32_t SUBMIT_TIMEOUT_MS = 20000;
+
+// KH/s policy (sesuaikan kalau perlu)
+static const double KH_FALLBACK = 56000.0;
+static const double KH_MIN = 52000.0;
+static const double KH_MAX = 62000.0;
 
 // ------------ pool state ------------
 struct DucoPool {
@@ -47,6 +52,8 @@ struct NodeState {
   uint32_t lastSig = 0;  // dedup signature (nonce+tag)
   uint32_t lastJobStartMs = 0;
   uint32_t lastDiff = 0;
+  uint32_t goodKhps = 55600;  // seed aman ESP-01
+  bool hasGood = false;       // pernah GOOD?
 
   // --- NEW: smoothing KH/s (versi gateway) ---
   double emaHps = 55000.0;  // seed aman untuk ESP01
@@ -353,111 +360,106 @@ static bool handle_REQJOB(const uint8_t src[6]) {
   return ok;
 }
 
-static bool handle_SUBMIT(const char *line, const uint8_t src[6]) {
+static bool handle_SUBMIT(const char* line, const uint8_t src[6]) {
   if (!ensurePoolConnected()) return false;
 
   NodeState* N = nodeRef(src);
   const char* nodeLabel = N ? N->id : "UNK";
 
+  // Format yang diharapkan dari worker:
   // SUBMIT,<nonce>,<khps_worker>,<rig>,<chip>,<wallet>,<node_id>[,<jobTag>]
   String s(line);
-  int c1=s.indexOf(',');                   if (c1<0) return false;
-  int c2=s.indexOf(',',c1+1);              if (c2<0) return false;
-  int c3=s.indexOf(',',c2+1);              if (c3<0) return false;
-  int c4=s.indexOf(',',c3+1);              if (c4<0) return false;
-  int c5=s.indexOf(',',c4+1);              if (c5<0) return false;
-  int c6=s.indexOf(',',c5+1);              if (c6<0) return false;
-  int c7=s.indexOf(',',c6+1);              // optional
 
-  String nonceStr = s.substring(c1+1,c2);
-  String khpsWrkS = s.substring(c2+1,c3);  // worker H/s (akan dipakai sbg referensi)
-  String rig      = s.substring(c3+1,c4);
-  String chip     = s.substring(c4+1,c5);
-  String wall     = s.substring(c5+1,c6);
-  String nodeId   = s.substring(c6+1,(c7>0?c7:s.length()));
-  String jobTag   = (c7>0)? s.substring(c7+1) : String("");
+  int c1 = s.indexOf(',');
+  if (c1 < 0) return false;
+  int c2 = s.indexOf(',', c1 + 1);
+  if (c2 < 0) return false;
+  int c3 = s.indexOf(',', c2 + 1);
+  if (c3 < 0) return false;
+  int c4 = s.indexOf(',', c3 + 1);
+  if (c4 < 0) return false;
+  int c5 = s.indexOf(',', c4 + 1);
+  if (c5 < 0) return false;
+  int c6 = s.indexOf(',', c5 + 1);
+  if (c6 < 0) return false;
+  int c7 = s.indexOf(',', c6 + 1);  // optional
 
+  String nonceStr = s.substring(c1 + 1, c2);
+  String khpsStr = s.substring(c2 + 1, c3);  // KH/s dari worker (dipakai)
+  String rig = s.substring(c3 + 1, c4);
+  String chip = s.substring(c4 + 1, c5);
+  String wall = s.substring(c5 + 1, c6);
+  String nodeId = s.substring(c6 + 1, (c7 > 0 ? c7 : s.length()));
+  String jobTag = (c7 > 0) ? s.substring(c7 + 1) : String("");
+
+  // fallback tag: pakai tag terakhir yang kita kirim
   if (!jobTag.length() && N && N->lastJobTag[0]) jobTag = String(N->lastJobTag);
 
-  // Stale & dedup (tetap seperti punyamu sebelumnya)
-  if (N && jobTag.length()==8 && N->lastJobTag[0]) {
+  // STALE check jika kedua sisi punya tag
+  if (N && jobTag.length() == 8 && N->lastJobTag[0]) {
     if (strncmp(N->lastJobTag, jobTag.c_str(), 8) != 0) {
-      ensurePeer(src); sendNow(src, "ACK,STALE,0\n");
+      ensurePeer(src);
+      sendNow(src, "ACK,STALE,0\n");
       Serial.printf("[DROP %s] STALE tag=%s last=%s\n", nodeLabel, jobTag.c_str(), N->lastJobTag);
       return true;
     }
   }
+
+  // Dedup berdasarkan (nodeId, nonce, tag)
   String sigStr = nodeId + ":" + nonceStr + ":" + jobTag;
   uint32_t sig = fnv1a32(sigStr.c_str());
   if (N && sig == N->lastSig) {
-    ensurePeer(src); sendNow(src, "ACK,DUP,0\n");
+    ensurePeer(src);
+    sendNow(src, "ACK,DUP,0\n");
     Serial.printf("[DROP %s] DUP nonce=%s tag=%s\n", nodeLabel, nonceStr.c_str(), jobTag.c_str());
     return true;
   }
   if (N) N->lastSig = sig;
 
-  // ==== KH/s versi gateway ====
-  unsigned long nonceUL = strtoul(nonceStr.c_str(), nullptr, 10);
+  // === KH/s policy: pakai angka dari worker, dibulatkan & di-clamp ===
+  double khps_out = khpsStr.toDouble();
+  if (khps_out <= 0.0) khps_out = KH_FALLBACK;
+  khps_out = (double)((uint32_t)(khps_out + 0.5));  // integer only
+  if (khps_out < KH_MIN) khps_out = KH_MIN;
+  if (khps_out > KH_MAX) khps_out = KH_MAX;
 
-  // waktu: dari saat KITA kirim JOB => KITA terima SUBMIT
-  double elapsed_s = 0.2;  // floor 200 ms untuk cegah div-by-zero
-  if (N) {
-    uint32_t dt_ms = millis() - N->lastJobStartMs;
-    if (dt_ms < 200) dt_ms = 200;
-    elapsed_s = dt_ms * 0.001;
-  }
-  double hps_gw = (elapsed_s > 0.0) ? (double)nonceUL / elapsed_s : 0.0;
+  uint32_t reportKhps = (N && N->hasGood) ? N->goodKhps : 55600;
 
-  // Hashrate yang dilaporkan worker
-  double hps_wrk = khpsWrkS.toDouble();
-
-  // Pastikan ada angka wajar untuk fallback
-  double fallback = (hps_wrk > 0.0) ? hps_wrk : 55000.0;
-  if (N) {
-    if (!N->emaInit) {
-      N->emaHps = fallback;
-      N->emaInit = true;
-    } else {
-      N->emaHps = 0.85 * N->emaHps + 0.15 * fallback;
-    }
-    fallback = N->emaHps;
-  }
-
-  // Nilai akhir: prioritaskan hitungan gateway (nonce / waktu) agar cocok dgn pemeriksaan pool
-  double khps_out = hps_gw;
-
-  // Bila gateway tidak punya data valid (misal N null / elapsed_s minim), pakai fallback
-  if (khps_out <= 0.0) khps_out = fallback;
-
-  // Clamp ringan agar tak jauh dari karakteristik ESP8266 namun tetap dekat perhitungan server
-  if (khps_out < 30000.0) khps_out = 30000.0;
-  if (khps_out > 80000.0) khps_out = 80000.0;
-
-  // ==== Upstream ke pool: kirim khps_out ====
-  String upstream = nonceStr + "," + String(khps_out, 2) + "," +
-                    MINER_BANNER + " " + MINER_VER + "," +
-                    rig + ",DUCOID" + chip + "," + wall + "\n";
+  // Upstream ke pool (KH/s TANPA desimal)
+  String upstream = nonceStr + "," + String(reportKhps) + "," + MINER_BANNER + " " + MINER_VER + "," + rig + ",DUCOID" + chip + "," + wall + "\n";
   pool.print(upstream);
 
-  // Ambil respon pool & kirim ACK
+  // Ambil jawaban pool & kirim ACK ke worker
   uint32_t t0 = millis();
   String resp;
   while (millis() - t0 < SUBMIT_TIMEOUT_MS) {
-    if (pool.available()) { resp = pool.readStringUntil('\n'); resp.trim(); break; }
+    if (pool.available()) {
+      resp = pool.readStringUntil('\n');
+      resp.trim();
+      break;
+    }
     delay(1);
   }
   if (!resp.length()) {
-    ensurePeer(src); sendNow(src, "ACK,NOPOOL,0\n");
+    ensurePeer(src);
+    sendNow(src, "ACK,NOPOOL,0\n");
     Serial.printf("[SUBMIT %s] timeout\n", nodeLabel);
-    pool.stop(); activePool = DucoPool{};
+    pool.stop();
+    activePool = DucoPool{};
     return false;
   }
 
   ensurePeer(src);
   sendNow(src, String("ACK,") + resp + ",0\n");
-  Serial.printf("[KH/s %s] wrk=%.2f gw=%.2f ema=%.2f => out=%.2f (dt=%.3fs nonce=%lu)\n",
-                nodeLabel, hps_wrk, hps_gw, fallback, khps_out, elapsed_s, nonceUL);
-  Serial.printf("[SUBMIT %s] %s (tag=%s)\n", nodeLabel, resp.c_str(), jobTag.c_str());
+  Serial.printf("[SUBMIT %s] %s (kh/s_out=%u tag=%s)\n",
+                nodeLabel, resp.c_str(), (unsigned)((uint32_t)khps_out), jobTag.c_str());
+
+  if (resp.startsWith("GOOD")) {
+    if (N) { N->hasGood = true; /* optional: tetap biarkan 55600 */ }
+  } else if (resp.indexOf("Modified hashrate") >= 0) {
+    // optional: kalau masih kejadian, turunkan dikit
+    if (N && N->goodKhps > 55200) N->goodKhps -= 100;  // nudge down
+  }
 
   return true;
 }
