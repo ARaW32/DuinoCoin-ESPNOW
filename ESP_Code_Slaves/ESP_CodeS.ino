@@ -272,9 +272,15 @@ void loop() {
     }
     if (((unsigned int)ctr % 5000U) == 0U) delay(1);  // yield
   }
+  // Di mineJob()
   unsigned long dt_us = micros() - tStart;
-  float dt_s = (dt_us < 1000) ? 0.001f : dt_us * 1e-6f;
+  float dt_s = dt_us * 1e-6f;
+  if (dt_s < 1e-6f) dt_s = 1e-6f;  // Min 1us hindari div0/inflasi
+  static float ema_hps = 55000.0;  // Seed awal
+  const float alpha = 0.05;
   float hps = ((unsigned int)ctr) / dt_s;
+  ema_hps = alpha * hps + (1 - alpha) * ema_hps;
+  hps = ema_hps;
 
   // SUBMIT (uplink broadcast-only) + jobTag di akhir
   char out[220];
@@ -284,6 +290,7 @@ void loop() {
            hps, RIG_NAME.c_str(), CHIP_STR.c_str(),
            (const char *)DUCO_USER, NODE_ID.c_str(), g_jobTag);
   sendBcast(out, (int)strlen(out));
+  Serial.printf("dt_us=%lu ctr=%u raw_hps=%.2f\n", dt_us, (unsigned int)ctr, hps);
   Serial.printf("[WKR %s] SUBMIT nonce=%lu kh/s=%.2f\n",
                 NODE_ID.c_str(),
                 found ? foundNonce : (unsigned long)((unsigned int)ctr),
