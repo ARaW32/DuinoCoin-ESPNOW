@@ -400,7 +400,7 @@ static bool handle_SUBMIT(const char *line, const uint8_t src[6]) {
   unsigned long nonceUL = strtoul(nonceStr.c_str(), nullptr, 10);
 
   // waktu: dari saat KITA kirim JOB => KITA terima SUBMIT
-  double elapsed_s = 0.2; // floor 200 ms
+  double elapsed_s = 0.2;  // floor 200 ms untuk cegah div-by-zero
   if (N) {
     uint32_t dt_ms = millis() - N->lastJobStartMs;
     if (dt_ms < 200) dt_ms = 200;
@@ -408,29 +408,32 @@ static bool handle_SUBMIT(const char *line, const uint8_t src[6]) {
   }
   double hps_gw = (elapsed_s > 0.0) ? (double)nonceUL / elapsed_s : 0.0;
 
-  // kombinasikan dgn worker H/s + EMA + clamp
-  double hps_wrk = khpsWrkS.toDouble();              // worker lapor ~55k
-  if (!N) hps_wrk = (hps_wrk>0? hps_wrk : 55000.0);
+  // Hashrate yang dilaporkan worker
+  double hps_wrk = khpsWrkS.toDouble();
 
-  // Inisialisasi EMA kalau perlu
-  if (N && !N->emaInit) { N->emaHps = (hps_wrk>0? hps_wrk : 55000.0); N->emaInit = true; }
-
-  // bobot: lebih percaya EMA + worker, kurangi efek spike gateway
-  double fused = 0.60 * (N?N->emaHps:55000.0) + 0.25 * hps_wrk + 0.15 * hps_gw;
-
-  // update EMA
-  if (N) N->emaHps = 0.80 * N->emaHps + 0.20 * fused;
-
-  // clamp ke rentang realistis ESP01 (silakan sesuaikan)
-  double khps_out = (N?N->emaHps:fused);
-  if (elapsed_s < 0.35 || nonceUL < 25000UL) {
-    // kalau terlalu cepat/nonce kecil, jangan trust angka baru
-    khps_out = (N?N->emaHps:khps_out);
+  // Pastikan ada angka wajar untuk fallback
+  double fallback = (hps_wrk > 0.0) ? hps_wrk : 55000.0;
+  if (N) {
+    if (!N->emaInit) {
+      N->emaHps = fallback;
+      N->emaInit = true;
+    } else {
+      N->emaHps = 0.85 * N->emaHps + 0.15 * fallback;
+    }
+    fallback = N->emaHps;
   }
-  if (khps_out < 35000.0) khps_out = 35000.0;
-  if (khps_out > 70000.0) khps_out = 70000.0;
 
-  // ==== Upstream ke pool: GANTI khps dengan khps_out yang stabil ====
+  // Nilai akhir: prioritaskan hitungan gateway (nonce / waktu) agar cocok dgn pemeriksaan pool
+  double khps_out = hps_gw;
+
+  // Bila gateway tidak punya data valid (misal N null / elapsed_s minim), pakai fallback
+  if (khps_out <= 0.0) khps_out = fallback;
+
+  // Clamp ringan agar tak jauh dari karakteristik ESP8266 namun tetap dekat perhitungan server
+  if (khps_out < 30000.0) khps_out = 30000.0;
+  if (khps_out > 80000.0) khps_out = 80000.0;
+
+  // ==== Upstream ke pool: kirim khps_out ====
   String upstream = nonceStr + "," + String(khps_out, 2) + "," +
                     MINER_BANNER + " " + MINER_VER + "," +
                     rig + ",DUCOID" + chip + "," + wall + "\n";
@@ -453,7 +456,7 @@ static bool handle_SUBMIT(const char *line, const uint8_t src[6]) {
   ensurePeer(src);
   sendNow(src, String("ACK,") + resp + ",0\n");
   Serial.printf("[KH/s %s] wrk=%.2f gw=%.2f ema=%.2f => out=%.2f (dt=%.3fs nonce=%lu)\n",
-                nodeLabel, hps_wrk, hps_gw, (N?N->emaHps:fused), khps_out, elapsed_s, nonceUL);
+                nodeLabel, hps_wrk, hps_gw, fallback, khps_out, elapsed_s, nonceUL);
   Serial.printf("[SUBMIT %s] %s (tag=%s)\n", nodeLabel, resp.c_str(), jobTag.c_str());
 
   return true;
