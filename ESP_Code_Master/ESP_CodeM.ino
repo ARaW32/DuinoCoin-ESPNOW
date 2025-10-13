@@ -9,8 +9,8 @@
 #include <esp_now.h>
 #include "Settings.h"  // DUCO_USER, MINER_KEY, RIG_IDENTIFIER (boleh dipakai)
 
-#define WIFI_SSID_VALUE "ESPs"
-#define WIFI_PASS_VALUE "m4m4p4p4"
+#define WIFI_SSID_VALUE "SSID"
+#define WIFI_PASS_VALUE "PASS"
 
 static const uint8_t BCAST_MAC[6] = { 255, 255, 255, 255, 255, 255 };
 static const char* START_DIFF_TAG = "ESP8266";  // starting diff ≈ 4000
