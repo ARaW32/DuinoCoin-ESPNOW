@@ -14,7 +14,7 @@
 ---
 
 > 🧪 **Status:** Fresh project — works end-to-end in testing, but not yet stress-tested with large device counts.  
-> ⚠️ **Known issue:** `BAD Submit`, `Modified Hash` — being investigated.  
+> ⚠️ **Known issue:** `BAD Submit`, `Modified Hashrate` — being investigated.  
 > 🧰 Expect rough edges — PRs & bug reports are *very welcome!*
 
 ---
