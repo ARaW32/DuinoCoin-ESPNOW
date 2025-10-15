@@ -13,7 +13,6 @@
 #define WIFI_PASS_VALUE "PASS"
 
 static const uint8_t BCAST_MAC[6] = { 255, 255, 255, 255, 255, 255 };
-static const char* START_DIFF_TAG = "ESP8266";  // starting diff ≈ 4000
 static const char* MINER_BANNER = "Official ESP8266 Miner";
 static const char* MINER_VER = "4.3";
 
@@ -52,14 +51,42 @@ struct NodeState {
   uint32_t lastSig = 0;  // dedup signature (nonce+tag)
   uint32_t lastJobStartMs = 0;
   uint32_t lastDiff = 0;
-  uint32_t goodKhps = 55600;  // seed aman ESP-01
-  bool hasGood = false;       // pernah GOOD?
-
-  // --- NEW: smoothing KH/s (versi gateway) ---
-  double emaHps = 55000.0;  // seed aman untuk ESP01
-  bool emaInit = false;
 };
 NodeState nodes[32];
+
+// ---- Start time per JOB TAG (maks 16 entri) ----
+struct TagStart {
+  bool used;
+  char tag[9];
+  uint32_t startMs;
+};
+TagStart tagStarts[16];
+
+static int findTagIdx(const char* t) {
+  for (int i = 0; i < 16; i++)
+    if (tagStarts[i].used && strncmp(tagStarts[i].tag, t, 8) == 0) return i;
+  return -1;
+}
+static int firstFreeTagIdx() {
+  for (int i = 0; i < 16; i++)
+    if (!tagStarts[i].used) return i;
+  // kalau penuh, timpa index 0
+  return 0;
+}
+static void setTagStartMs(const char* t, uint32_t ms) {
+  int i = findTagIdx(t);
+  if (i < 0) i = firstFreeTagIdx();
+  tagStarts[i].used = true;
+  strncpy(tagStarts[i].tag, t, 8);
+  tagStarts[i].tag[8] = '\0';
+  tagStarts[i].startMs = ms;
+}
+static bool getTagStartMs(const char* t, uint32_t& msOut) {
+  int i = findTagIdx(t);
+  if (i < 0) return false;
+  msOut = tagStarts[i].startMs;
+  return true;
+}
 
 static inline String tail8(const String& hex40) {
   int L = hex40.length();
@@ -310,7 +337,7 @@ static bool handle_REQJOB(const uint8_t src[6]) {
   if (!ensurePoolConnected()) return false;
 
   // Request job (pakai ESP8266 agar diff=4000)
-  String req = "JOB," + String((const char*)DUCO_USER) + ",ESP8266," + String((const char*)MINER_KEY) + "\n";
+  String req = "JOB," + String((const char*)DUCO_USER) + ",ESP8266H," + String((const char*)MINER_KEY) + "\n";
   pool.print(req);
 
   // Tunggu job: "lastHash,expectedHex,diff"
@@ -354,6 +381,9 @@ static bool handle_REQJOB(const uint8_t src[6]) {
   // Kirim frame ke worker: "JOB,<lastHash>,<expectedHex>,<diff>,<tag>\n"
   String pkt = "JOB," + lastHash + "," + expectedHex + "," + diffStr + "," + tag + "\n";
   ensurePeer(src);
+
+  // stamp start time per tag (per JOB)
+  setTagStartMs(tag.c_str(), millis());
   bool ok = sendNow(src, pkt);
 
   Serial.printf("[JOB %s] %s (%s)\n", N ? N->id : "UNK", job.c_str(), tag.c_str());
@@ -416,20 +446,33 @@ static bool handle_SUBMIT(const char* line, const uint8_t src[6]) {
   }
   if (N) N->lastSig = sig;
 
-  // === KH/s policy: pakai angka dari worker, dibulatkan & di-clamp ===
-  double khps_out = khpsStr.toDouble();
-  if (khps_out <= 0.0) khps_out = KH_FALLBACK;
-  khps_out = (double)((uint32_t)(khps_out + 0.5));  // integer only
-  if (khps_out < KH_MIN) khps_out = KH_MIN;
-  if (khps_out > KH_MAX) khps_out = KH_MAX;
+  // --- Elapsed versi gateway ---
+  unsigned long nonce = strtoul(nonceStr.c_str(), nullptr, 10);
+  float elapsed_s = 0.0f;
+  uint32_t startMs = 0;
 
-  uint32_t reportKhps = (N && N->hasGood) ? N->goodKhps : 55600;
+  if (jobTag.length() == 8 && getTagStartMs(jobTag.c_str(), startMs))
+    elapsed_s = (millis() - startMs) / 1000.0f;
+  else if (N && N->lastJobStartMs > 0)
+    elapsed_s = (millis() - N->lastJobStartMs) / 1000.0f;
 
-  // Upstream ke pool (KH/s TANPA desimal)
-  String upstream = nonceStr + "," + String(reportKhps) + "," + MINER_BANNER + " " + MINER_VER + "," + rig + ",DUCOID" + chip + "," + wall + "\n";
+  if (elapsed_s < 0.02f) elapsed_s = 0.02f;
+  unsigned long hps_out = (unsigned long)((float)nonce / elapsed_s + 0.5f);
+
+  Serial.printf("[SUBMIT %s] nonce=%s tag=%s elapsed=%.3fs OUT=%lu H/s\n",
+                nodeLabel, nonceStr.c_str(), jobTag.c_str(), elapsed_s, hps_out);
+
+  // === Kirim ke pool ===
+  String rigOut = (String(RIG_IDENTIFIER) == "None")
+                    ? String("ESP32GW-") + (N ? N->id : "UNK")
+                    : String(RIG_IDENTIFIER) + "-" + (N ? N->id : "UNK");
+  String chipOut = String("espnow-") + (N ? N->id : "unk");
+  String wallOut = String((const char*)DUCO_USER);
+
+  String upstream = String(nonce) + "," + String(hps_out) + "," + MINER_BANNER + " " + MINER_VER + "," + rigOut + ",DUCOID" + chipOut + "," + wallOut + "\n";
   pool.print(upstream);
 
-  // Ambil jawaban pool & kirim ACK ke worker
+  // === Baca respon pool ===
   uint32_t t0 = millis();
   String resp;
   while (millis() - t0 < SUBMIT_TIMEOUT_MS) {
@@ -440,6 +483,7 @@ static bool handle_SUBMIT(const char* line, const uint8_t src[6]) {
     }
     delay(1);
   }
+
   if (!resp.length()) {
     ensurePeer(src);
     sendNow(src, "ACK,NOPOOL,0\n");
@@ -451,15 +495,13 @@ static bool handle_SUBMIT(const char* line, const uint8_t src[6]) {
 
   ensurePeer(src);
   sendNow(src, String("ACK,") + resp + ",0\n");
-  Serial.printf("[SUBMIT %s] %s (kh/s_out=%u tag=%s)\n",
-                nodeLabel, resp.c_str(), (unsigned)((uint32_t)khps_out), jobTag.c_str());
+  Serial.printf("[SUBMIT %s] %s (hps_out=%lu tag=%s)\n",
+                nodeLabel, resp.c_str(), hps_out, jobTag.c_str());
 
-  if (resp.startsWith("GOOD")) {
-    if (N) { N->hasGood = true; /* optional: tetap biarkan 55600 */ }
-  } else if (resp.indexOf("Modified hashrate") >= 0) {
-    // optional: kalau masih kejadian, turunkan dikit
-    if (N && N->goodKhps > 55200) N->goodKhps -= 100;  // nudge down
-  }
+  if (resp.startsWith("GOOD"))
+    Serial.printf("[GW] Share OK (%s)\n", jobTag.c_str());
+  else if (resp.indexOf("Modified hashrate") >= 0)
+    Serial.printf("[GW] WARN Modified hashrate tag=%s\n", jobTag.c_str());
 
   return true;
 }
