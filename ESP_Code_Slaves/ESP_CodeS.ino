@@ -1,324 +1,225 @@
-// ===== ESP01_Worker_ESPNow_Slave_FINAL.ino =====
-// Board: Generic ESP8266 (ESP-01)
-// Tools -> CPU Frequency: 160 MHz (recommended for speed)
-// Serial Monitor: 115200
+// Settings.h
+#ifndef SETTINGS_H
+#define SETTINGS_H
 
-#include <Arduino.h>
-#include <ESP8266WiFi.h>
-#include <espnow.h>
-#include <user_interface.h>
+// ---------------------- General settings ---------------------- //
+// Settings.h
+#pragma once
+static const char DUCO_USER[]     PROGMEM = "ARaW32";
+static const char MINER_KEY[]     PROGMEM = "arawganteng";
+static const char RIG_IDENTIFIER[] PROGMEM = "ESP32S"; // atau "None"
 
-#include "Counter.h"
-#include "DSHA1.h"
-#include "Settings.h"  // DUCO_USER, MINER_KEY, RIG_IDENTIFIER (dari project-mu)
+// Change the part in brackets to your WiFi name
+extern const char SSID[] = "ESPs";
+// Change the part in brackets to your WiFi password
+extern const char PASSWORD[] = "m4m4p4p4";
+// -------------------------------------------------------------- //
 
-#ifndef LED_BUILTIN
-#define LED_BUILTIN 2
+// -------------------- Advanced options ------------------------ //
+// Uncomment if you want to host the dashboard page (available on ESPs IP address and mDNS)
+#define WEB_DASHBOARD
+
+// Comment out the line below if you wish to disable LED blinking
+#define LED_BLINKING
+
+// Uncomment if you want to use LAN8720. WLAN-credentials will be ignored using LAN
+// Select correct Board in ArduinoIDE!!! Really!
+// #define USE_LAN
+
+// Comment out the line below if you wish to disable Serial printing
+#define SERIAL_PRINTING
+
+// Edit the line below if you wish to change the serial speed (low values may reduce performance but are less prone to interference)
+#define SERIAL_BAUDRATE 115200
+
+// ESP8266 WDT loop watchdog. Do not edit this value, but if you must - do not set it too low or it will falsely trigger during mining!
+#define LWD_TIMEOUT 30000
+
+// Uncomment to disable ESP32 brownout detector if you're suffering from faulty insufficient power detection
+// #define DISABLE_BROWNOUT
+
+// Uncomment to enable WiFiManager captive portal in AP mode
+// The board will create its own network you connect to and change the settings
+// REQUIRES WiFiManager library by tzapu (https://github.com/tzapu/WiFiManager)
+// #define CAPTIVE_PORTAL
+// -------------------------------------------------------------- //
+
+// ------------------------ Displays ---------------------------- //
+
+// Uncomment to enable a SSD1306 OLED screen on the I2C bus to display mining info in real time
+// Default connections (can be overriden by using a different u8g2 initializer, see line 140):
+// GND - GND
+// VCC - 5V or 3.3V depending on display
+// SCL - GPIO22 (ESP32) or GPIO5 (D2 on ESP8266) or GPIO35 (ESP32-S2)
+// SDA - GPIO21 (ESP32) or GPIO4 (D1 on ESP8266) or GPIO33 (ESP32-S2)
+// #define DISPLAY_SSD1306
+
+// Uncomment to enable a 16x2 LCD screen on a direct bus to display mining info in real time
+// See line 150 for connections and initializer
+// #define DISPLAY_16X2
+
+// Uncomment if your device is a Duino BlushyBox device
+// #define BLUSHYBOX
+// -------------------------------------------------------------- //
+
+// ---------------------- IoT examples -------------------------- //
+// https://github.com/revoxhere/duino-coin/wiki/Duino's-take-on-the-Internet-of-Things
+
+// Uncomment the line below if you wish to use the internal temperature sensor (Duino IoT example)
+// Only ESP32-S2, -S3, -H2, -C2, -C3, -C6 and some old models have one!
+// More info: https://www.espboards.dev/blog/esp32-inbuilt-temperature-sensor/
+// NOTE: Mining performance will decrease by about 20 kH/s!
+// #define USE_INTERNAL_SENSOR
+
+// Uncomment the line below if you wish to use a DS18B20 temperature sensor (Duino IoT example)
+// NOTE: Mining performance should stay the same
+// #define USE_DS18B20
+
+// Uncomment the line below if you wish to use a DHT11/22 temperature and humidity sensor (Duino IoT example)
+// NOTE: Mining performance should stay the same
+// #define USE_DHT
+
+// Uncomment the line below if you wish to use a HSU07M sensor (Duino IoT Example)
+// NOTE: Untested as of right now
+// #define USE_HSU07M
+// -------------------------------------------------------------- //
+
+// ---------------- Variables and definitions ------------------- //
+// You generally do not need to edit stuff below this line
+// unless you're know what you're doing.
+
+#if defined(ESP8266)
+    // ESP8266
+    #define LED_BUILTIN 2
+#elif defined(CONFIG_FREERTOS_UNICORE) 
+    #if defined(CONFIG_IDF_TARGET_ESP32C3)
+      // ESP32-C3
+      #define LED_BUILTIN 8
+    #else
+      // ESP32-S2
+      #define LED_BUILTIN 15
+    #endif
+#else
+    // ESP32
+    #ifndef LED_BUILTIN
+      #define LED_BUILTIN 2
+    #endif
+    #if defined(BLUSHYBOX)
+      #define LED_BUILTIN 4
+    #endif
 #endif
 
-// ===== USER CONFIG =====
-static const uint8_t WIFI_CHANNEL = 1;  // samakan dgn channel AP router/gateway
-static const uint8_t BCAST_MAC[6] = { 255, 255, 255, 255, 255, 255 };
+#define BLINK_SETUP_COMPLETE 2
+#define BLINK_CLIENT_CONNECT 5
 
-// ===== State =====
-volatile bool got = false;
-char rx[240];
-uint8_t lastSrc[6];
+#define SOFTWARE_VERSION "4.3"
+extern unsigned int hashrate = 0;
+extern unsigned int hashrate_core_two = 0;
+extern unsigned int difficulty = 0;
+extern unsigned long share_count = 0;
+extern unsigned long accepted_share_count = 0;
+extern String node_id = "";
+extern String WALLET_ID = "";
+extern unsigned int ping = 0;
 
-bool paired = false;
-uint8_t DEST_MAC[6] = { 0 };
+#if defined(USE_INTERNAL_SENSOR)
+  #include "driver/temp_sensor.h"
+#endif
 
-String NODE_ID;   // ex: "D4F8A9"
-String RIG_NAME;  // ex: "ESP01S-D4F8A9" atau "<RIG_IDENTIFIER>-D4F8A9"
-String CHIP_STR;  // ex: "d4f8a9"
+#if defined(USE_DS18B20)
+  // Install OneWire and DallasTemperature libraries if you get an error
+  #include <OneWire.h>
+  #include <DallasTemperature.h>
+  // Change 12 to the pin you've connected your sensor to
+  const int DSPIN = 12;
+  
+  OneWire oneWire(DSPIN);
+  DallasTemperature extern sensors(&oneWire);
+#endif
 
-DSHA1 dsha1;
-uint8_t job_expected[20];
-String job_last_hash;
-unsigned int job_targets = 0;
-char g_jobTag[9] = { 0 };  // 8 hex tail dari lastHash
+#if defined(USE_DHT)
+  // Install "DHT sensor library" if you get an error
+  #include <DHT.h>
+  // Change 12 to the pin you've connected your sensor to
+  #define DHTPIN 12
+  // Set DHT11 or DHT22 type accordingly
+  #define DHTTYPE DHT11
+  
+  DHT extern dht(DHTPIN, DHTTYPE);
+#endif
 
-// ---------- utils ----------
-static inline void printMac(const uint8_t *m) {
-  Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X", m[0], m[1], m[2], m[3], m[4], m[5]);
-}
-static inline uint8_t hexNibble(char c) {
-  if (c >= '0' && c <= '9') return c - '0';
-  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-  return 0;
-}
-static void hexToBytes40(const char *s, uint8_t out20[20]) {
-  for (int i = 0; i < 20; i++) {
-    uint8_t hi = hexNibble(s[2 * i]), lo = hexNibble(s[2 * i + 1]);
-    out20[i] = (hi << 4) | lo;
-  }
-}
-static String chipHexUpper() {
-  uint8_t mac[6];
-  wifi_get_macaddr(STATION_IF, mac);
-  char nid[7];
-  sprintf(nid, "%02X%02X%02X", mac[3], mac[4], mac[5]);
-  return String(nid);
-}
-static String chipHexLower() {
-  uint8_t mac[6];
-  wifi_get_macaddr(STATION_IF, mac);
-  char nid[7];
-  sprintf(nid, "%02x%02x%02x", mac[3], mac[4], mac[5]);
-  return String(nid);
-}
+#if defined(DISPLAY_SSD1306)
+    // Install "u8g2" if you get an error
+    #include <U8g2lib.h>
+    #include <Wire.h>
+    // Display definition from the U8G2 library. Edit if you use a different display
+    // For software I2C, use ..._F_SW_I2C and define the pins in the initializer
+    U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
+#endif
 
-// ---------- callbacks ----------
-void onRecv(uint8_t *mac, uint8_t *data, uint8_t len) {
-  int n = min((int)len, (int)sizeof(rx) - 1);
-  memcpy(lastSrc, mac, 6);
-  memcpy(rx, data, n);
-  rx[n] = '\0';
-  got = true;
-}
-void onSent(uint8_t *mac, uint8_t status) {
-  // diamkan log broadcast (biar bersih)
-  if (mac && memcmp(mac, BCAST_MAC, 6) == 0) return;
-  Serial.print("[TX sent ");
-  if (mac) printMac(mac);
-  else Serial.print("BCAST");
-  Serial.printf("] %s\n", status == 0 ? "OK" : "FAIL");
-}
+#if defined(DISPLAY_16X2)
+    #include "Wire.h"
+    // Install "Adafruit_LiquidCrystal" if you get an error
+    #include "Adafruit_LiquidCrystal.h"
 
-// ---------- esp-now helpers ----------
-static bool addPeerCh(const uint8_t *mac, uint8_t ch) {
-  if (esp_now_is_peer_exist((uint8_t *)mac)) esp_now_del_peer((uint8_t *)mac);
-  int r = esp_now_add_peer((uint8_t *)mac, ESP_NOW_ROLE_COMBO, ch, NULL, 0);
-  return r == 0;
-}
-static inline void sendBcast(const char *s, int len) {
-  esp_now_send((uint8_t *)BCAST_MAC, (uint8_t *)s, len);
-}
+    // initialize the library with the numbers of the interface pins
+    //                         RS E  D4 D5 D6 D7
+    Adafruit_LiquidCrystal lcd(1, 2, 3, 4, 5, 6);
+#endif
 
-// ---------- parse JOB ----------
-static bool parseJobLine(const char *line) {
-  // JOB,<lastHash(40)>,<expectedHex(40)>,<diff>[,<jobTag(8)>]
-  char lastHash[41] = { 0 }, expect[41] = { 0 }, tag[9] = { 0 };
-  unsigned diff = 0;
-  int n = sscanf(line, "JOB,%40[^,],%40[^,],%u,%8s", lastHash, expect, &diff, tag);
+#if defined(USE_HSU07M)
+    #include "Wire.h"
+    #define HSU07M_ADDRESS 0x4B // Change this if your sensor has a different address
 
-  if (n < 3) return false;
-  job_last_hash = String(lastHash);
-  hexToBytes40(expect, job_expected);
-
-  // diff→target
-  job_targets = diff * 100 + 1;
-
-  // pre-seed DSHA1
-  dsha1.reset().write((const unsigned char *)job_last_hash.c_str(), job_last_hash.length());
-
-  // jobTag: pakai dari gateway kalau ada; kalau tidak, ambil 8 tail dari lastHash
-  if (n == 4 && strlen(tag) == 8) {
-    strncpy(g_jobTag, tag, 8);
-    g_jobTag[8] = '\0';
-  } else {
-    size_t L = job_last_hash.length();
-    for (int i = 0; i < 8; i++) g_jobTag[i] = job_last_hash.c_str()[L - 8 + i];
-    g_jobTag[8] = '\0';
-  }
-  return true;
-}
-
-// ---------- LED ----------
-static inline void ledOn() {
-  digitalWrite(LED_BUILTIN, LOW);
-}
-static inline void ledOff() {
-  digitalWrite(LED_BUILTIN, HIGH);
-}
-static void blinkAck(bool good) {
-  int count = good ? 2 : 1;
-  for (int i = 0; i < count; i++) {
-    ledOn();
-    delay(80);
-    ledOff();
-    delay(90);
-  }
-}
-
-void setup() {
-  Serial.begin(115200);
-  delay(150);
-  Serial.println();
-  Serial.println(F("[WKR] boot"));
-
-  NODE_ID = chipHexUpper();
-  CHIP_STR = chipHexLower();
-  RIG_NAME = (String(RIG_IDENTIFIER) == "None") ? (String("ESP01S-") + NODE_ID)
-                                                : (String(RIG_IDENTIFIER) + "-" + NODE_ID);
-
-  pinMode(LED_BUILTIN, OUTPUT);
-  ledOff();
-
-  // radio/esp-now init
-  wifi_set_opmode_current(STATION_MODE);
-  wifi_set_phy_mode(PHY_MODE_11G);
-  wifi_set_sleep_type(NONE_SLEEP_T);
-  WiFi.persistent(false);
-  WiFi.setAutoConnect(false);
-  WiFi.setAutoReconnect(false);
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_STA);
-  WiFi.setSleepMode(WIFI_NONE_SLEEP);
-
-  // lock channel
-  wifi_promiscuous_enable(1);
-  wifi_set_channel(WIFI_CHANNEL);
-  wifi_promiscuous_enable(0);
-  Serial.printf("[WKR %s] ch=%u\n", NODE_ID.c_str(), WIFI_CHANNEL);
-
-  int r = esp_now_init();
-  Serial.printf("[ESPNOW] init=%d\n", r);
-  if (r != 0) {
-    Serial.println("[FATAL] esp_now_init");
-    while (1) delay(1000);
-  }
-
-  esp_now_set_self_role(ESP_NOW_ROLE_COMBO);
-  esp_now_register_recv_cb(onRecv);
-  esp_now_register_send_cb(onSent);
-
-  // broadcast peer only (uplink broadcast)
-  addPeerCh(BCAST_MAC, WIFI_CHANNEL);
-
-  // salam awal
-  String hello = String("HELLO_NODE,") + NODE_ID + "\n";
-  sendBcast(hello.c_str(), hello.length());
-}
-
-void loop() {
-  // pairing (belajar MAC STA gateway dari HELLO_GW)
-  if (!paired) {
-    static uint32_t t = 0;
-    if (millis() - t >= 1000) {
-      t = millis();
-      String hello = String("HELLO_NODE,") + NODE_ID + "\n";
-      sendBcast(hello.c_str(), hello.length());
-      Serial.printf("[WKR %s] HELLO_NODE\n", NODE_ID.c_str());
-    }
-    if (got) {
-      got = false;
-      String line(rx);
-      line.trim();
-      if (line.startsWith("HELLO_GW")) {
-        memcpy(DEST_MAC, lastSrc, 6);
-        addPeerCh(DEST_MAC, WIFI_CHANNEL);  // agar bisa terima unicast dari GW
-        // kirim ACK unicast singkat
-        String ack = String("HELLO_ACK,") + NODE_ID + "\n";
-        esp_now_send(DEST_MAC, (uint8_t *)ack.c_str(), ack.length());
-        paired = true;
-        Serial.print("[WKR] paired @ ");
-        printMac(DEST_MAC);
-        Serial.println();
+    float read_hsu07m() {
+      Wire.beginTransmission(HSU07M_ADDRESS);
+      Wire.write(0x00);
+      Wire.endTransmission();
+      delay(100);
+      Wire.requestFrom(HSU07M_ADDRESS, 2);
+      if(Wire.available() >= 2) {
+          byte tempMSB = Wire.read();
+          byte tempLSB = Wire.read();
+          int tempRaw = (tempMSB << 8) | tempLSB;
+          float tempC = (tempRaw / 16.0) - 40.0;
+          return tempC;
       }
+      return -1.0;
     }
-    delay(1);
-    return;
-  }
+#endif
 
-  // REQJOB (uplink broadcast) + jitter 0-300ms
-  delay(random(0, 300));
-  {
-    String req = String("REQJOB,") + NODE_ID + "\n";
-    sendBcast(req.c_str(), req.length());
-    // log ringkas
-    Serial.printf("[WKR %s] REQJOB\n", NODE_ID.c_str());
-  }
+#if defined(BLUSHYBOX)
+    #define GAUGE_PIN 5
+    #define GAUGE_MAX 190
+    #define GAUGE_MIN 0
+    #if defined(ESP8266)
+      #define GAUGE_MAX_HR 80000
+    #else
+      #define GAUGE_MAX_HR 200000
+    #endif
+    extern float hashrate_old = 0.0;
 
-  // Tunggu JOB
-  uint32_t t0 = millis();
-  bool gotJob = false;
-  while (millis() - t0 < 15000) {
-    if (got) {
-      got = false;
-      String line(rx);
-      line.trim();
-      if (line.startsWith("JOB,")) {
-        gotJob = parseJobLine(line.c_str());
-        if (gotJob) {
-          Serial.printf("[WKR %s] JOB diff=%u tag=%s\n", NODE_ID.c_str(), job_targets / 100, g_jobTag);
+    void gauge_set(float hashrate) {
+        float old = hashrate_old;
+        float new_val = hashrate;
+
+        if (hashrate_old == 0) {
+          float delta = (new_val - old) / 50;
+          for (int x=0; x < 50; x++) {
+              analogWrite(5, map(old + x*delta, 0, GAUGE_MAX_HR, GAUGE_MIN, GAUGE_MAX) + random(0, 10));
+              delay(20);
+          }
+        } else {
+          float delta = (new_val - old) / 10;
+          for (int x=0; x < 10; x++) {
+              analogWrite(5, map(old + x*delta, 0, GAUGE_MAX_HR, GAUGE_MIN, GAUGE_MAX) + random(0, 10));
+              delay(10);
+          }
         }
-        break;
-      }
+        hashrate_old = hashrate;
     }
-    delay(1);
-  }
-  if (!gotJob) {
-    Serial.printf("[WKR %s] no JOB\n", NODE_ID.c_str());
-    delay(400);
-    return;
-  }
+#endif
 
-  // Mining (inner loop minimal)
-  Counter<10> ctr;
-  uint8_t hash[20];
-  unsigned long tStart = micros();
-  bool found = false;
-  unsigned long foundNonce = 0;
+IPAddress DNS_SERVER(1, 1, 1, 1); // Cloudflare DNS server
 
-  for (ctr.reset(); (unsigned int)ctr < job_targets; ++ctr) {
-    DSHA1 ctx = dsha1;  // pre-seeded
-    ctx.write((const unsigned char *)ctr.c_str(), ctr.strlen()).finalize(hash);
-    if (memcmp(job_expected, hash, 20) == 0) {
-      found = true;
-      foundNonce = (unsigned int)ctr;
-      break;
-    }
-    if (((unsigned int)ctr % 5000U) == 0U) delay(1);  // yield
-  }
-  // Di mineJob()
-  unsigned long dt_us = micros() - tStart;
-  float dt_s = dt_us * 1e-6f;
-  if (dt_s < 1e-6f) dt_s = 1e-6f;  // Min 1us hindari div0/inflasi
-  static float ema_hps = 55000.0;  // Seed awal
-  const float alpha = 0.05;
-  float hps = ((unsigned int)ctr) / dt_s;
-  ema_hps = alpha * hps + (1 - alpha) * ema_hps;
-  hps = ema_hps;
-
-  // SUBMIT (uplink broadcast-only) + jobTag di akhir
-  char out[220];
-  snprintf(out, sizeof(out),
-           "SUBMIT,%lu,%.2f,%s,%s,%s,%s,%s\n",
-           found ? foundNonce : (unsigned long)((unsigned int)ctr),
-           hps, RIG_NAME.c_str(), CHIP_STR.c_str(),
-           (const char *)DUCO_USER, NODE_ID.c_str(), g_jobTag);
-  sendBcast(out, (int)strlen(out));
-  Serial.printf("dt_us=%lu ctr=%u raw_hps=%.2f\n", dt_us, (unsigned int)ctr, hps);
-  Serial.printf("[WKR %s] SUBMIT nonce=%lu kh/s=%.2f\n",
-                NODE_ID.c_str(),
-                found ? foundNonce : (unsigned long)((unsigned int)ctr),
-                hps);
-
-  // ACK
-  t0 = millis();
-  bool gotAck = false;
-  bool good = false;
-  while (millis() - t0 < 12000) {
-    if (got) {
-      got = false;
-      String line(rx);
-      line.trim();
-      if (line.startsWith("ACK,")) {
-        // ACK,<resp>,<ping>
-        int c1 = line.indexOf(','), c2 = line.indexOf(',', c1 + 1);
-        String resp = line.substring(c1 + 1, c2 < 0 ? line.length() : c2);
-        good = resp.startsWith("GOOD");
-        Serial.printf("[WKR %s] ACK %s\n", NODE_ID.c_str(), resp.c_str());
-        gotAck = true;
-        break;
-      }
-    }
-    delay(1);
-  }
-  blinkAck(good);
-  if (!gotAck) Serial.printf("[WKR %s] no ACK\n", NODE_ID.c_str());
-
-  delay(300);
-}
+#endif  // End of SETTINGS_H
