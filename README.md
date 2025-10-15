@@ -14,8 +14,8 @@
 ---
 
 > 🧪 **Status:** Fresh project — works end-to-end in testing, but not yet stress-tested with large device counts.  
-> ⚠️ **Last issue:** `BAD Submit`, `Modified Hashrate` — Solved.
-> ⚠️ **Current issue:** `High Starting Difficulty` when mining, resulting to `Modified Hashrate` problem — Being Investigated. 
+> ⚠️ **Last issue:** `BAD Submit`, `Modified Hashrate` — Solved.  
+> ⚠️ **Current issue:** `High Starting Difficulty` when mining, resulting to `Modified Hashrate` problem — Being Investigated.   
 > 🧰 Expect rough edges — PRs & bug reports are *very welcome!*
 
 ---
